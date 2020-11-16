@@ -1,114 +1,229 @@
 /*
- *     filename: uarray2.c
- *     by Reed Kass-Mullet and Jerry Wang, 10/1/20
- *     HW2 - iii
- *
- *    contains the functions and structs for uarray2
- */ 
+ *          uarray2b.c
+ *      Authors: Nick Murphy and Reed Kass-Mullet
+ *      Assignment: Comp40 Homework 3, Locality
+ *      Due: October 12
+ * 
+ * 
+ */
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h>
-#include <uarray2.h>
+//#include "uarray2.h"
+#include "uarray.h"
 #include <assert.h>
-#include <uarray.h>
+#include "uarray2b.h"
+#include "uarray2.h"
+#include <math.h>
 
-#define T UArray2_T
+#define T UArray2b_T
+
+const int MAX_SIZE = 64000;
+
+extern int calc_Col(int index, T array2b);
+extern int calc_Row(int index, T array2b);
 
 struct T {
     int width;
     int height;
     int element_size;
-    UArray_T columns; // UArray of UArrays (2d Version)
+    int block_size;
+    UArray_T blocks; // UArray of UArrays (2d Version)
 };
 
-T UArray2_new(int width, int height, int size) 
+/*
+ *      Takes in the dimensions for a new UArray2b and returns it
+ *      Gets: Dimensions for new UArray2b
+ *      Returns: A new UArray2b
+ */
+extern T UArray2b_new(int width, int height, int size, int blocksize)
 {
     assert(height > 0);
     assert(width > 0);
     assert(size > 0);
+    assert(blocksize > 0);
+    //find number of blocks needed
+    int num_block_width = (width + blocksize - 1) / blocksize;
+    int num_block_height = (height + blocksize - 1) / blocksize;
+    UArray_T blocks = UArray_new(blocksize * blocksize * 
+                                num_block_width * num_block_height, size);
+    T arrayb = malloc(sizeof(*arrayb));
+    assert(arrayb != NULL);
+    arrayb -> width = width;
+    arrayb -> height = height;
+    arrayb -> element_size = size;
+    arrayb -> block_size = blocksize;
+    arrayb -> blocks = blocks;
+    return arrayb;
+}
 
-    T array = malloc(sizeof(*array));
-    assert(array != NULL);
 
-    UArray_T columns = UArray_new(width, height * size);
-    for (int i = 0; i < width; i++) {
-        UArray_T row = UArray_new(height, size);
-        *(UArray_T *) UArray_at(columns, i) = row;
+/*
+ *      Initializes a new blocked 2D array with 
+ *      blocksize as large as it can be, at most 64 KB
+ *      Gets: Dimensions for new blocked UArray2b
+ *      Returns: New blocked UArray2b 
+ */
+extern T UArray2b_new_64K_block(int width, int height, int size)
+{
+    assert(height > 0);
+    assert(width > 0);
+    assert(size > 0);
+    
+    int block_size = 0;
+    int capacity = MAX_SIZE / size;
+    
+    /* If size > Max_size: */
+    if (capacity == 0) {
+        block_size = 1;
+    } else {
+        /* Calculate the max block size through int math*/
+        block_size = (int) floor (sqrt ((double) capacity));
     }
 
-    array->width = width;
-    array->height = height;
-    array->element_size = size;
-    array->columns = columns;
-
-    return array;
+    T array2b = UArray2b_new(width, height, size, block_size);
+    return array2b;
 }
 
-int UArray2_width(T array) 
+/*
+ *      Frees a UArray2b
+ *      Gets: a UArray2b
+ *      Returns: Nothing
+ */
+extern void UArray2b_free(T *array2b)
 {
-    assert(array != NULL);
-    return array->width;
+    assert(array2b != NULL);
+    assert(*array2b != NULL);
+    UArray_free(&((*array2b) -> blocks));
+    free(*array2b);
 }
 
-int UArray2_height(T array) 
+/*
+ *      Returns the width of a UArray2b
+ *      Gets: a UArray2b
+ *      Returns: The width of the inputted UArray2b
+ */
+extern int UArray2b_width(T array2b)
 {
-    assert(array != NULL);
-    return array->height;
+    assert(array2b != NULL);
+    return array2b -> width;
 }
 
-int UArray2_size(T array) 
+/*
+ *      Returns the height of a UArray2b
+ *      Gets: a UArray2b
+ *      Returns: The height of the inputted UArray2b
+ */
+extern int UArray2b_height(T array2b)
 {
-    assert(array != NULL);
-    return array->element_size;
+    assert(array2b != NULL);
+    return array2b -> height;
 }
 
-void *UArray2_at(T array, int col, int row) 
+/*
+ *      Returns the size of a UArray2b
+ *      Gets: a UArray2b
+ *      Returns: The size of the inputted UArray2b
+ */
+extern int UArray2b_size(T array2b)
 {
-    assert(array != NULL);
-    assert((col >= 0) && (col < array->width));
-    assert((row >= 0) && (row < array->height));
-
-    return UArray_at(*((UArray_T *) UArray_at(array->columns, col)), row);
+    assert(array2b != NULL);
+    return array2b -> element_size;
 }
 
-void UArray2_map_col_major(T array, void (*func)(int i, int j, UArray2_T a, 
-                            void *p1, void *p2), void *flex) 
+/*
+ *      Returns the block_size of a UArray2b
+ *      Gets: a UArray2b
+ *      Returns: The block_size of the inputted UArray2b
+ */
+extern int UArray2b_blocksize(T array2b)
 {
-    assert(array != NULL);
-    assert(func != NULL);
+    assert(array2b != NULL);
+    return array2b -> block_size;
+}
 
-    for (int i = 0; i < array->width; i++) {
-        for (int j = 0; j < array->height; j++) {
-            func(i, j, array, 
-                 UArray_at(*(UArray_T *) UArray_at(array->columns, i), j), 
-                          flex);
+/*
+ *      Returns the element at the inputted indices of a UArray2b
+ *      Gets: a UArray2b
+ *      Returns: The desired element
+ */
+extern void *UArray2b_at(T array2b, int column, int row)
+{
+    assert(array2b != NULL);
+    assert((column >= 0) && (column < array2b -> width));
+    assert((row >= 0) && (row < array2b -> height));
+    /* Calculate index */
+    int w = array2b -> width;
+    int bs = array2b -> block_size;
+    int bc = column / bs;
+    int br = row / bs;
+
+    int bn = (w + bs - 1) / bs;
+
+    int bloc = bc + (bn * br);
+
+    int c_block = column % bs;
+    int r_block = row % bs;
+
+    int inside_in = c_block + (r_block * bs);
+    int index = inside_in + (bloc * bs * bs);
+    /* Return pointer to cell at index */
+    return UArray_at(array2b -> blocks, index);
+}
+
+/* visits every cell in one block before moving to another block */
+extern void UArray2b_map(T array2b,
+                         void apply(int col, int row, T array2b,
+                                    void *elem, void *cl),
+                         void *cl)
+{
+    assert(array2b != NULL);
+    assert(apply != NULL);
+    for(int i = 0; i < UArray_length((array2b -> blocks)); ++i) {
+        int c = calc_Col(i, array2b);
+        int r = calc_Row(i, array2b);
+        if (c < array2b -> width  && r < array2b -> height) {
+            apply(c, r, array2b, UArray_at(array2b -> blocks, i), cl);
         }
     }
 }
 
-void UArray2_map_row_major(T array, void (*func)(int i, int j, UArray2_T a, 
-                           void *p1, void *p2), void *flex) 
+/*
+ *      Calculates the 2D col of the index within the UArray2b
+ *      Gets: an index and a UArray2b
+ *      Returns: The column index of the element
+ */
+extern int calc_Col(int index, T array2b)
 {
-    assert(array != NULL);
-    assert(func != NULL);
+    int blocksize = array2b->block_size;
+    int bloc = index / (blocksize * blocksize);
 
-    for (int i = 0; i < array->height; i++) {
-        for (int j = 0; j < array->width; j++) {
-            func(j, i, array, 
-                 UArray_at(*(UArray_T *) UArray_at(array->columns, j), i), 
-                           flex);
-        }
-    }
+    int inner_index = index - (bloc * blocksize * blocksize);
+
+    int inner_Col = inner_index % blocksize;
+    int block_number = (array2b -> width + blocksize - 1) / blocksize;
+    int bloc_Col = bloc % block_number;
+    int index_Col = (bloc_Col * blocksize) + inner_Col;
+    return index_Col;
 }
 
-void UArray2_free(T* array) 
+/*
+ *      Calculates the 2D row of the index within the UArray2b
+ *      Gets: an index and a UArray2b
+ *      Returns: The row index of the element
+ */
+extern int calc_Row(int index, T array2b)
 {
-    assert(array != NULL);
+    int blocksize = array2b->block_size;
+    int bloc = index / (blocksize * blocksize);
 
-    for (int i = 0; i < (*array)->width; i++) {
-        UArray_free((UArray_T *) (UArray_at((*array)->columns, i)));
-    }
-    UArray_free(&((*array)->columns));
-    free(*array);
+    int inner_index = index - (bloc * blocksize * blocksize);
+
+    int inner_Row = inner_index / blocksize;
+    int block_number = (array2b -> width + blocksize - 1) / blocksize;
+    int bloc_Row = bloc / block_number;
+    int index_Row = (bloc_Row * blocksize) + inner_Row;
+    return index_Row;
 }
+
+#undef T
